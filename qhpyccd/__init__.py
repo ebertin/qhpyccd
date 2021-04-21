@@ -74,7 +74,6 @@ class qhyccd(object):
         lib.SetQHYCCDLogLevel(0)
         print(self.SDKVersion())
         check_call(lib.InitQHYCCDResource())
-        check_call(0xFFFFFFEE)
 
     def SDKVersion(self):
        ymds = ffi.new("uint32_t[4]")

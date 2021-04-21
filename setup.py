@@ -7,7 +7,7 @@ setup(name='qhpyccd',
       author_email='bertin@iap.fr',
       setup_requires=["cffi>=1.0.0"],
       install_requires=["cffi>=1.0.0"],
-      cffi_modules=["qhyccd.py:ffibuilder"],
+      cffi_modules=["qhpyccd/qhyccd.py:ffibuilder"],
       packages=['qhpyccd'],
       )
 
