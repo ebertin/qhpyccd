@@ -9,7 +9,7 @@ ffibuilder.cdef(open('qhpyccd/qhpyccd.h').read())
 # produce, and some C source code as a string.  This C code needs
 # to make the declarated functions, types and globals available,
 # so it is often just the "#include".
-ffibuilder.set_source("_qhyccd_cffi",
+ffibuilder.set_source("_qhpyccd_cffi",
      open('qhpyccd/qhpyccd.h').read(),
      libraries=['qhyccd'])   # library name, for the linker
 

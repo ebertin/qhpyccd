@@ -1,4 +1,4 @@
-from _qhyccd_cffi import ffi, lib
+from _qhpyccd_cffi import ffi, lib
 import numpy as np
 import sys
 
@@ -107,18 +107,22 @@ ERROR_MIN = 0xFFFF0000
 ERROR_CODE_DICT = dict([(code[0], code[1]) for code in ERROR_CODES])
 ERROR_DESC_DICT = dict([(code[1], code[2]) for code in ERROR_CODES])
 
+# Stream modes
+QHYCCD_STREAM_SINGLE = 0x00
+QHYCCD_STREAM_LIVE = 0x01
+
 def check_status(status_code):
     """Examine return status code of function call
     and raise RunTimeError if appropriate
 
     Parameters
     ----------
-    status_code: integer
+    status_code : integer
         status code
 
     Returns
     -------
-    status: integer
+    status : integer
         propagated function result
 
     """
@@ -128,34 +132,46 @@ def check_status(status_code):
 
     return status_code
 
-def raise_error(status_string):
-    """Raise RunTimeError using a given status string
+def error(status_string):
+    """Return the error description that matches a status string
 
     Parameters
     ----------
-    status_string: string
+    status_string : string
         status string
+    Returns
+    -------
+    description : string
+        error description
+
     """
-
-    raise RuntimeError(f'{ERROR_DESC_DICT[ERROR_CODE_DICT[status_string]]}')
-
+    return f'{ERROR_DESC_DICT[ERROR_CODE_DICT[status_string]]}'
+   
 class qhyccd(object):
     """Minimalistic wrapper object around the QHYCCD camera driver
     """
                    
     def __init__(self, cam_no=0):
         lib.SetQHYCCDLogLevel(0)
-        print(f"Driver version: {self.get_sdkversion()}")
+        print(f"Driver version: {self.get_sdk_version()}")
         self.init_resource()
-        if self.scan_cams() == 0:
-            raise_error('QHYCCD_ERROR_NO_DEVICE')
-        self.set_camno(cam_no)
-        print(f"QHYCCD camera found: {self.get_camname()}")
-        self.open_cam()
-        print(f"Firmware version: {self.get_fwversion()}")
+        if self.scan_cameras() == 0:
+            raise RuntimeError(error('QHYCCD_ERROR_NO_DEVICE'))
+        self.set_camera_no(cam_no)
+        print(f"QHYCCD camera found: {self.get_camera_name()}")
+        self.open_camera()
+        print(f"Firmware version: {self.get_firmware_version()}")
         if self.has_control('CAM_SINGLEFRAMEMODE') == False:
             print("Error: Single-Frame mode not supported")
-            raise_error('QHYCCD_ERROR_UNSUPPORTED')
+            raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
+        self.set_stream_mode(mode='single')
+        print("Initializing...", end='\r', flush=True)
+        self.init_camera()
+        print(f"{self.get_camera_name()} initialized")
+        print("Color sensor" if self.has_control('CAM_COLOR') else "B/W sensor")
+        print(f"Max resolution: {self.get_image_size()[0]:d} x {self.get_image_size()[1]:d}")
+        print(f"Chip size: {self.get_chip_size()[0]:.2f}mm x {self.get_chip_size()[1]:.2f}mm")
+        print(f"Pixel size: {self.get_pixel_size()[0]:.2f}um x {self.get_pixel_size()[1]:.2f}um")
 
     def init_resource(self):
         """Initialize QHYCCD SDK resource
@@ -164,7 +180,7 @@ class qhyccd(object):
         Raises RunTimeError in case of error
         """
         check_status(lib.InitQHYCCDResource())
-        return
+        return self
 
     def release_resource(self):
         """Release QHYCCD SDK resource
@@ -175,7 +191,7 @@ class qhyccd(object):
         check_status(lib.ReleaseQHYCCDResource())
         return self
 
-    def scan_cams(self):
+    def scan_cameras(self):
         """Scan for connected QHYCCD cameras
 
         Update the number of connected QHYCCD cameras,
@@ -183,145 +199,337 @@ class qhyccd(object):
 
         Returns
         -------
-        ncam: integer
+        ncam : integer
             number of connected cameras
         """
-        self.ncam = check_status(lib.ScanQHYCCD())
-        return self.ncam
+        self._ncam = check_status(lib.ScanQHYCCD())
+        return self._ncam
 
-    def set_camno(self, cam_no):
+    def set_camera_no(self, cam_no):
         """Set the camera index
 
         Set the camera index
         Raises RunTimeError in case of error
         """
-        if cam_no >= self.ncam:
-          check_status(ERROR_CODE_DICT['QHYCCD_ERROR_NO_MATCH'])
-        self.cam_no = cam_no
-        self.cam_id = ffi.new("char[32]")
-        check_status(lib.GetQHYCCDId(self.cam_no, self.cam_id))
-        self.cam_idstr = ffi.string(self.cam_id).decode()
+        if cam_no >= self._ncam:
+          raise RuntimeError(error('QHYCCD_ERROR_NO_MATCH'))
+        self._cam_no = cam_no
+        self._cam_id = ffi.new('char[32]')
+        check_status(lib.GetQHYCCDId(self._cam_no, self._cam_id))
+        self._cam_idstr = ffi.string(self._cam_id).decode()
         return self
 
-    def get_camname(self):
-        """Get the name of the current QHYCCD camera
+    def get_camera_name(self):
+        """Return the name of the current QHYCCD camera
         
-        Returns the name of the current QHYCCD camera
+        Return the name of the current QHYCCD camera
 
         Returns
         -------
-        version: string
+        version : string
             camera name
         """
-        return self.cam_idstr
+        return self._cam_idstr
 
-    def open_cam(self):
+    def open_camera(self):
         """Open the current camera
         
-        Gets the handle of the current QHYCCD camera
-
-        Raises RunTimeError in case of error
+        Gets the handle of the current QHYCCD camera.
+        Raises RunTimeError in case of error.
         """
-        self.cam_handle = lib.OpenQHYCCD(self.cam_id)
-        if ffi.cast("uintptr_t", self.cam_handle) == 0:
-            check_status(ERROR_CODE_DICT['QHYCCD_ERROR_ERROR_OPENCAM'])
+        self._cam_handle = lib.OpenQHYCCD(self._cam_id)
+        if ffi.cast('uintptr_t', self._cam_handle) == 0:
+            raise RuntimeError(error('QHYCCD_ERROR_ERROR_OPENCAM'))
         return self
 
-    def close_cam(self):
+    def close_camera(self):
         """Close the current camera
         
-        Remove the handle of the current QHYCCD camera
+        Remove the handle of the current QHYCCD camera.
+        Raises RunTimeError in case of error.
+        """
+        check_status(lib.CloseQHYCCD(self._cam_handle))
+        del self._cam_handle
+        return self
 
+    def init_camera(self):
+        """Initialize the current camera
+
+        Initialize the current QHYCCD camera
         Raises RunTimeError in case of error
         """
-        check_status(lib.CloseQHYCCD(self.cam_handle))
-        del self.cam_handle
+        check_status(lib.InitQHYCCD(self._cam_handle))
         return self
 
     def has_control(self, control):
-        """Check if the current camera has a given control
+        """Check if the current camera has a given control parameter
         
-        Remove the handle of the current QHYCCD camera
-
+        Check if the current camera has a given control parameter.
         Parameters
         ----------
         control: string
-            control code string
+            control parameter code string
 
         Returns
         -------
-        flag: boolean
+        flag : boolean
             whether the control exists for the current camera
         """
-        ret = lib.IsQHYCCDControlAvailable(self.cam_handle,
+        ret = lib.IsQHYCCDControlAvailable(self._cam_handle,
         	CONTROL_CODE_DICT[control])
         flag = (ret == ERROR_CODE_DICT['QHYCCD_SUCCESS'])
         return flag
 
-    def set_control(self, control):
-        """set a given control in the current camera
+    def set_control(self, control, value):
+        """Set a given control parameter in the current camera
         
-        Set a control in the current QHYCCD camera
-        Raises RunTimeError in case of error
+        Set a control parameter in the current QHYCCD camera.
+        Raises RunTimeError in case of error.
+        Parameters
+        ----------
+        control : string
+            control parameter code string
+        value: double
+            control parameter value
+        """
+        check_status(lib.SetQHYCCDParam(self._cam_handle, control, value))
+        return self
+
+    def query_control(self, control):
+        """Query a given control parameter from the current camera
+        
+        Query a given control parameter from the current QHYCCD camera.
+        Raises RunTimeError in case of error.
+        Parameters
+        ----------
+        control : string
+            control parameter code string
+        value: double
+            control parameter value
+        """
+        check_status(lib.SetQHYCCDParam(self._cam_handle, control, value))
+        return self
+
+
+    def set_stream_mode(self, mode='single'):
+        """Set the camera read out mode
+        
+        Set the camera streaming mode.
+        Raises KeyError or RunTimeError in case of error.
         
         Parameters
         ----------
-        control: string
-            control code string
-
-        Returns
-        -------
-        flag: boolean
-            whether the control exists for the current camera
-
-        Raises RunTimeError in case of error
+        mode : string
+            'single': single exposure (default)
+            'live': video mode
         """
-        return
+        if mode == 'single':
+            imode = 0x00
+        elif mode == 'live':
+            imode = 0x01
+        else:
+            raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
+        check_status(lib.SetQHYCCDStreamMode(self._cam_handle, imode))
 
-    def get_sdkversion(self):
-        """Get the version of the QHYCCD driver
+        self._stream_mode = mode
+        return self
+
+    def query_chip_info(self):
+        """Query information from the current camera
         
-        Returns the version of the QHYCCD driver
-        Raises RunTimeError in case of error
+        Query information from the current camera.
+        Raises RunTimeError in case of error.
+        Sets attributes
+        ---------------
+        _chip_size : tuple double[2]
+            physical chip size (W,H in mm), 
+        _image_size : tuple uint32[2]
+            maximum raster size (W,H in pixels),
+        _pixel_size : tuple double[2]
+            physical pixel size (W,H in um),
+        _bpp : uint8
+            bit depth
+        """
+        chip_size = ffi.new('double[2]')
+        image_size = ffi.new('uint32_t[2]')
+        pixel_size = ffi.new('double[2]')
+        bpp = ffi.new('uint32_t *')
+        
+        check_status(lib.GetQHYCCDChipInfo(self._cam_handle, \
+                     chip_size, chip_size + 1, \
+                     image_size, image_size + 1, \
+                     pixel_size, pixel_size + 1, \
+                     bpp))
 
+        self._chip_size = tuple(chip_size)
+        self._image_size = tuple(image_size)
+        self._pixel_size = tuple(pixel_size)
+        self._bpp = int(bpp[0])
+        return self
+
+    def get_chip_size(self):
+        """Return the physical chip size of the current camera
+        
+        Return the physical chip size of the current QHYCCD camera.
         Returns
         -------
-        version: string
+        chip_size : tuple double[2]
+            physical chip size (W,H in mm), 
+        """
+        if not hasattr(self, '_chip_size'):
+            self.query_chip_info()
+        return self._chip_size
+
+    def get_image_size(self):
+        """Return the mximum image size of the current camera
+        
+        Return the mximum image (raster) size of the current QHYCCD camera.
+        Returns
+        -------
+        image_size : tuple uint32[2]
+            maximum raster size (W, H in pixels)
+        """
+        if not hasattr(self, '_pixel_size'):
+            self.query_chip_info()
+        return self._image_size
+
+    def get_pixel_size(self):
+        """Return the physical pixel size of the current camera
+        
+        Return the physical pixel size of the current QHYCCD camera.
+        Returns
+        -------
+        pixel_size : tuple double[2]
+            physical pixel size (W,H in um), 
+        """
+        if not hasattr(self, '_pixel_size'):
+            self.query_chip_info()
+        return self._pixel_size
+
+    def query_overscan_area(self):
+        """Query the overscan limits from the current camera
+        
+        Query the overscan limits from the current QHYCCD camera.
+        Raises RunTimeError in case of error
+        Sets attributes
+        ---------------
+        _overscan_limits : tuple of 4 integers
+            [startX, startY, sizeX, sizeY]
+        """
+        limits = ffi.new('uint32_t[4]')
+        check_status(lib.GetQHYCCDOverScanArea(self._cam_handle, \
+                     limits, limits + 1, limits + 2, limits + 3))
+        self._overscan_limits = tuple(limits)
+        return self
+
+    def get_overscan_area(self):
+        """Return the overscan limits of the current camera
+        
+        Return the overscan limits from the current QHYCCD camera.
+        Returns
+        -------
+        overscan_limits : tuple of 4 integers
+            [startX, startY, sizeX, sizeY]
+        """
+        if not hasattr(self, '_overscan_limits'):
+            self.query_oversan_area()
+        return self._overscan_limits
+
+    def query_effective_area(self):
+        """Query the effective limits from the current camera
+        
+        Query the effective limits from the current QHYCCD camera.
+        Raises RunTimeError in case of error.
+        Sets attributes
+        ---------------
+        _effective_limits : tuple of 4 integers
+            [startX, startY, sizeX, sizeY]
+        """
+        limits = ffi.new('uint32_t[4]')
+        check_status(lib.GetQHYCCDOverScanArea(self._cam_handle, \
+                     limits, limits + 1, limits + 2, limits + 3))
+        self._effective_limits = tuple(limits)
+        return self
+
+    def get_effective_area(self):
+        """Return the effective limits of the current camera
+        
+        Return the effective limits from the current QHYCCD camera.
+        Returns
+        -------
+        effective_limits : tuple of 4 integers
+            [startX, startY, sizeX, sizeY]
+        """
+        if not hasattr(self, '_effective_limits'):
+            self.query_effective_area()
+        return self._effective_limits
+
+    def query_sdk_version(self):
+        """Query the version of the QHYCCD driver
+        
+        Query the version of the QHYCCD driver.
+        Raises RunTimeError in case of error.
+        Sets attributes
+        ---------------
+        _sdk_version : string
             driver version
         """
-        ymds = ffi.new("uint32_t[4]")
+        ymds = ffi.new('uint32_t[4]')
         check_status(lib.GetQHYCCDSDKVersion(ymds, ymds+1, ymds+2, ymds+3))
-        version = f'20{ymds[0]:02d}{ymds[1]:02d}{ymds[2]:02d}_{ymds[3]}'
-        return version
+        self._sdk_version = f'20{ymds[0]:02d}{ymds[1]:02d}{ymds[2]:02d}_{ymds[3]}'
+        return self
     
-    def get_fwversion(self):
-        """Get the version of the camera firmware
- 
-        Gets the firmware version of the current QHYCCD camera
-        Raises RunTimeError in case of error
-
+    def get_sdk_version(self):
+        """Return the version of the QHYCCD driver
+        
+        Return the version of the QHYCCD driver.
         Returns
         -------
-        version: string
+        version : string
             driver version
         """
-
-        fwv = ffi.new("uint8_t[32]")
-        check_status(lib.GetQHYCCDFWVersion(self.cam_handle, fwv))
+        if not hasattr(self, '_sdk_version'):
+            self.query_sdk_version()
+        return self._sdk_version
+        
+    def query_firmware_version(self):
+        """Query the version of the firmware from the camera
+ 
+        Query the version of the firmware from the current QHYCCD camera.
+        Raises RunTimeError in case of error.
+        Sets attributes
+        ---------------
+        _firmware_version : string
+            firmware version
+        """
+        fwv = ffi.new('uint8_t[32]')
+        check_status(lib.GetQHYCCDFWVersion(self._cam_handle, fwv))
 
         yr1 = fwv[0] >> 4
         if yr1 < 10:
           yr1 += 0x10
         yr2 = fwv[0] & ~0xf0
 
-        version = f'20{yr1:02d}_{yr2:02d}_{fwv[1]:02d}'
-        return version
+        self._firmware_version = f'20{yr1:02d}_{yr2:02d}_{fwv[1]:02d}'
+        return self
 
+    def get_firmware_version(self):
+        """Return the version of the firmware from the camera
+        
+        Return the version of the firmware from the current QHYCCD camera.
+        Returns
+        -------
+        version : string
+            firmware version
+        """
+        if not hasattr(self, '_firmware_version'):
+            self.query_firmware_version()
+        return self._firmware_version
+        
     def __del__(self):
-        if hasattr(self, 'cam_handle'):
-            self.close_cam()
+        if hasattr(self, '_cam_handle'):
+            self.close_camera()
         self.release_resource()
-        return
 
 if __name__=='__main__':
     a = qhyccd()
