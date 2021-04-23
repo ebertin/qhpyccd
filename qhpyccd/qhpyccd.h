@@ -1,8 +1,8 @@
 /**
- * @brief CONTROL_ID enum define
- *
- * List of the function could be control
- */
+Simplifed include file from the QHYCCD SDK include files (v20210415_16)
+refactored for the CFFI-based Python wrapper qhpyccd.
+(c) 2021 E.Bertin IAP/CNRS/SorbonneU
+*/
 
 typedef uint32_t CONTROL_ID;
 
@@ -89,7 +89,7 @@ extern uint32_t SetQHYCCDParam(qhyccd_handle *handle,CONTROL_ID controlId, doubl
 	  another QHYCCD_ERROR code on other failures
   */
 
-double GetQHYCCDParam(qhyccd_handle *handle,CONTROL_ID controlId);
+extern double GetQHYCCDParam(qhyccd_handle *handle,CONTROL_ID controlId);
 /** \fn double GetQHYCCDParam(qhyccd_handle *handle,CONTROL_ID controlId)
       \brief get the params value from camera
       \param handle camera control handle
@@ -99,6 +99,42 @@ double GetQHYCCDParam(qhyccd_handle *handle,CONTROL_ID controlId);
 	  QHYCCD_ERROR_NOTSUPPORT,if the camera do not have the function \n
 	  QHYCCD_ERROR_GETPARAMS,if get camera params'value failed \n
 	  another QHYCCD_ERROR code on other failures
+  */
+
+extern uint32_t SetQHYCCDResolution(qhyccd_handle *handle,uint32_t x,uint32_t y,uint32_t xsize,uint32_t ysize);
+/** @fn uint32_t SetQHYCCDResolution(qhyccd_handle *handle,uint32_t x,uint32_t y,uint32_t xsize,uint32_t ysize)
+    @brief set camera ouput resolution
+    @param handle camera control handle
+    @param x the top left position x
+    @param y the top left position y
+    @param xsize the image width
+    @param ysize the image height
+    @return
+        on success,return QHYCCD_SUCCESS\n
+        another QHYCCD_ERROR code on other failures
+  */
+
+extern uint32_t SetQHYCCDBinMode(qhyccd_handle *handle, uint32_t wbin,uint32_t hbin);
+/** \
+  @fn uint32_t SetQHYCCDBinMode(qhyccd_handle *handle,uint32_t wbin,uint32_t hbin)
+  @brief set camera's bin mode for ouput image data
+  @param handle camera control handle
+  @param wbin width bin mode
+  @param hbin height bin mode
+  @return
+  on success,return QHYCCD_SUCCESS \n
+  another QHYCCD_ERROR code on other failures
+*/
+
+extern uint32_t SetQHYCCDBitsMode(qhyccd_handle *handle,uint32_t bits);
+/**
+   @fn uint32_t SetQHYCCDBitsMode(qhyccd_handle *handle,uint32_t bits)
+   @brief set camera's depth bits for ouput image data
+   @param handle camera control handle
+   @param bits image depth
+   @return
+   on success,return QHYCCD_SUCCESS \n
+   another QHYCCD_ERROR code on other failures
   */
 
 extern uint32_t GetQHYCCDChipInfo(qhyccd_handle *h,double *chipw,double *chiph,uint32_t *imagew,uint32_t *imageh,double *pixelw,double *pixelh,uint32_t *bpp);
@@ -163,8 +199,6 @@ extern uint32_t InitQHYCCD(qhyccd_handle *handle);
 	  another QHYCCD_ERROR code on other failures
   */
 
-
-
 extern uint32_t GetQHYCCDSDKVersion(uint32_t *year,uint32_t *month,uint32_t *day,uint32_t *subday);
 
 extern uint32_t GetQHYCCDFWVersion(qhyccd_handle *h,uint8_t *buf);
@@ -176,5 +210,41 @@ extern uint32_t GetQHYCCDFWVersion(qhyccd_handle *h,uint8_t *buf);
 	  on success,return QHYCCD_SUCCESS \n
  
 	  another QHYCCD_ERROR code on other failures
+ */
+
+extern uint32_t ExpQHYCCDSingleFrame(qhyccd_handle *handle);
+/** \fn uint32_t ExpQHYCCDSingleFrame(qhyccd_handle *handle)
+      \brief start to expose one frame
+      \param handle camera control handle
+      \return
+	  on success,return QHYCCD_SUCCESS \n
+	  QHYCCD_ERROR_EXPOSING,if the camera is exposing \n
+	  QHYCCD_ERROR_EXPFAILED,if start failed \n
+	  another QHYCCD_ERROR code on other failures
+  */
+
+extern uint32_t GetQHYCCDMemLength(qhyccd_handle *handle);
+/** \fn uint32_t GetQHYCCDMemLength(qhyccd_handle *handle)
+      \brief get the minimum memory space for image data to save(byte)
+      \param handle camera control handle
+      \return
+	  on success,return the total memory space for image data(byte) \n
+	  another QHYCCD_ERROR code on other failures
+  */
+
+extern uint32_t GetQHYCCDSingleFrame(qhyccd_handle *handle,uint32_t *w,uint32_t *h,uint32_t *bpp,uint32_t *channels,uint8_t *imgdata);
+/**
+   @fn uint32_t GetQHYCCDSingleFrame(qhyccd_handle *handle,uint32_t *w,uint32_t *h,uint32_t *bpp,uint32_t *channels,uint8_t *imgdata)
+   @brief get live frame data from camera
+   @param handle camera control handle
+   @param *w pointer to width of ouput image
+   @param *h pointer to height of ouput image
+   @param *bpp pointer to depth of ouput image
+   @param *channels pointer to channels of ouput image
+   @param *imgdata image data buffer
+   @return
+   on success,return QHYCCD_SUCCESS \n
+   QHYCCD_ERROR_GETTINGFAILED,if get data failed \n
+   another QHYCCD_ERROR code on other failures
  */
 

@@ -1,3 +1,7 @@
+"""
+Simplified Python wrapper for the QHYCCD cameras.
+(c) 2021 E.Bertin IAP/CNRS/SorbonneU
+"""
 from _qhpyccd_cffi import ffi, lib
 import numpy as np
 import sys
@@ -76,7 +80,7 @@ CONTROL_DESC_DICT = dict([(code[1], code[2]) for code in CONTROL_CODES])
 
 ERROR_CODES = (
 ('QHYCCD_SUCCESS', 0x00000000, 'Camera works well'),
-('QHYCCD_ERROR', 0xFFFFFFFF, 'Other error'),
+('QHYCCD_ERROR', 0xFFFFFFFF, 'Error'),
 ('QHYCCD_ERROR_NO_DEVICE', 0xFFFFFFFE, 'No camera connected'),
 ('QHYCCD_ERROR_UNSUPPORTED', 0xFFFFFFFD, 'Unsupported function'),
 ('QHYCCD_ERROR_SETPARAMS', 0xFFFFFFFC, 'Invalid parameter (set)'),
@@ -151,13 +155,23 @@ class qhyccd(object):
     """Minimalistic wrapper object around the QHYCCD camera driver
     """
                    
-    def __init__(self, cam_no=0):
+    def __init__(self,
+                 cam_no=0,
+                 usbtraffic=0,
+                 gain=100,
+                 offset=100,
+                 exptime=0.1,
+                 region_start=[0,0],
+                 region_size=[0,0],
+                 bin_size=[1,1],
+                 bit_depth=16):
+
         lib.SetQHYCCDLogLevel(0)
         print(f"Driver version: {self.get_sdk_version()}")
         self.init_resource()
         if self.scan_cameras() == 0:
             raise RuntimeError(error('QHYCCD_ERROR_NO_DEVICE'))
-        self.set_camera_no(cam_no)
+        self.set_camera(cam_no)
         print(f"QHYCCD camera found: {self.get_camera_name()}")
         self.open_camera()
         print(f"Firmware version: {self.get_firmware_version()}")
@@ -165,6 +179,7 @@ class qhyccd(object):
             print("Error: Single-Frame mode not supported")
             raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
         self.set_stream_mode(mode='single')
+        print(f"Acquisition mode set to {self.get_stream_mode()}")
         print("Initializing...", end='\r', flush=True)
         self.init_camera()
         print(f"{self.get_camera_name()} initialized")
@@ -172,6 +187,23 @@ class qhyccd(object):
         print(f"Max resolution: {self.get_image_size()[0]:d} x {self.get_image_size()[1]:d}")
         print(f"Chip size: {self.get_chip_size()[0]:.2f}mm x {self.get_chip_size()[1]:.2f}mm")
         print(f"Pixel size: {self.get_pixel_size()[0]:.2f}um x {self.get_pixel_size()[1]:.2f}um")
+        self.set_usbtraffic(usbtraffic)
+        print(f"USBtraffic parameter: {self.get_usbtraffic()}")
+        self.set_gain(gain)
+        print(f"Gain: {self.get_gain()} cB")
+        self.set_offset(offset)
+        print(f"Offset: {self.get_offset()}")
+        self.set_exptime(exptime)
+        print(f"Exposure time: {self.get_exptime():.6f} s")
+        self.set_region(region_start,region_size)
+        print(f"Acquisition region: {self.get_region()[0][0]}-" + \
+              f"{self.get_region()[0][0] + self.get_region()[1][0]} x " + \
+              f"{self.get_region()[0][1]}-" + \
+              f"{self.get_region()[0][1] + self.get_region()[1][1]}")
+        self.set_binsize(bin_size)
+        print(f"Binsize: {self.get_binsize()[0]} x {self.get_binsize()[1]}")
+        self.set_bitdepth(bit_depth)
+        print(f"Bitdepth: {self.get_bitdepth()}")
 
     def init_resource(self):
         """Initialize QHYCCD SDK resource
@@ -191,11 +223,13 @@ class qhyccd(object):
         check_status(lib.ReleaseQHYCCDResource())
         return self
 
+    ################################# Camera ##################################
+
     def scan_cameras(self):
         """Scan for connected QHYCCD cameras
 
-        Update the number of connected QHYCCD cameras,
-        Raises RunTimeError in case of error
+        Update the number of connected QHYCCD cameras.
+        Raises RunTimeError in case of error.
 
         Returns
         -------
@@ -205,11 +239,11 @@ class qhyccd(object):
         self._ncam = check_status(lib.ScanQHYCCD())
         return self._ncam
 
-    def set_camera_no(self, cam_no):
+    def set_camera(self, cam_no):
         """Set the camera index
 
-        Set the camera index
-        Raises RunTimeError in case of error
+        Set the camera index.
+        Raises RunTimeError in case of error.
         """
         if cam_no >= self._ncam:
           raise RuntimeError(error('QHYCCD_ERROR_NO_MATCH'))
@@ -222,21 +256,30 @@ class qhyccd(object):
     def get_camera_name(self):
         """Return the name of the current QHYCCD camera
         
-        Return the name of the current QHYCCD camera
+        Return the name of the current QHYCCD camera.
+        Raises RunTimeError if the camera is not set.
 
         Returns
         -------
         version : string
             camera name
         """
+        if not hasattr(self, '_cam_idstr'):
+            print("Error: camera is not set")
+            raise RuntimeError(error('QHYCCD_ERROR'))
+
         return self._cam_idstr
 
     def open_camera(self):
         """Open the current camera
         
         Gets the handle of the current QHYCCD camera.
-        Raises RunTimeError in case of error.
+        Raises RunTimeError in case of error or if the camera is not set.
         """
+        if not hasattr(self, '_cam_id'):
+            print("Error: camera is not set")
+            raise RuntimeError(error('QHYCCD_ERROR'))
+
         self._cam_handle = lib.OpenQHYCCD(self._cam_id)
         if ffi.cast('uintptr_t', self._cam_handle) == 0:
             raise RuntimeError(error('QHYCCD_ERROR_ERROR_OPENCAM'))
@@ -248,23 +291,61 @@ class qhyccd(object):
         Remove the handle of the current QHYCCD camera.
         Raises RunTimeError in case of error.
         """
-        check_status(lib.CloseQHYCCD(self._cam_handle))
-        del self._cam_handle
+        if hasattr(self, '_cam_handle'):
+            check_status(lib.CloseQHYCCD(self._cam_handle))
+            del self._cam_handle
         return self
 
     def init_camera(self):
         """Initialize the current camera
 
-        Initialize the current QHYCCD camera
-        Raises RunTimeError in case of error
+        Initialize the current QHYCCD camera.
+        Raises RunTimeError in case of error or if the camera is not open.
         """
+        if not hasattr(self, '_cam_handle'):
+            print("Error: camera is not open")
+            raise RuntimeError(error('QHYCCD_ERROR'))
+
         check_status(lib.InitQHYCCD(self._cam_handle))
         return self
+
+    ############################## Acquisition ################################
+    def get_image(self):
+        """Acquire an image with the current QHYCCD camera
+        
+        Acquire an image with the current QHYCCD camera.
+        Raises RunTimeError in case of error or if the camera is not open.
+        """
+        if not hasattr(self, '_cam_handle'):
+            print("Error: camera is not open")
+            raise RuntimeError(error('QHYCCD_ERROR'))
+
+        if not hasattr(self, 'image'):
+            print("Error: Acquisition region has not been set")
+            raise RuntimeError(error('QHYCCD_ERROR'))
+
+        check_status(lib.ExpQHYCCDSingleFrame(self._cam_handle))
+        #memsize = lib.GetQHYCCDMemLength(self._cam_handle)
+        roi_size = ffi.new('uint32_t[2]')
+        bpp = ffi.new('uint32_t *')
+        channels = ffi.new('uint32_t *')
+        self.imageData = ffi.cast("uint8_t *", self.image.ctypes.data)
+        check_status(lib.GetQHYCCDSingleFrame(self._cam_handle, \
+                                              roi_size, roi_size + 1, \
+                                              bpp, \
+                                              channels, \
+                                              self.imageData))
+
+        return self
+
+
+    ########################## Control parameters #############################
 
     def has_control(self, control):
         """Check if the current camera has a given control parameter
         
         Check if the current camera has a given control parameter.
+
         Parameters
         ----------
         control: string
@@ -285,31 +366,266 @@ class qhyccd(object):
         
         Set a control parameter in the current QHYCCD camera.
         Raises RunTimeError in case of error.
+
         Parameters
         ----------
         control : string
             control parameter code string
-        value: double
+        value: float
             control parameter value
         """
-        check_status(lib.SetQHYCCDParam(self._cam_handle, control, value))
+        check_status(lib.SetQHYCCDParam(self._cam_handle, \
+                     CONTROL_CODE_DICT[control], float(value)))
         return self
 
     def query_control(self, control):
         """Query a given control parameter from the current camera
         
         Query a given control parameter from the current QHYCCD camera.
-        Raises RunTimeError in case of error.
+
         Parameters
         ----------
         control : string
             control parameter code string
-        value: double
+
+        Returns
+        -------
+        value: float
             control parameter value
         """
-        check_status(lib.SetQHYCCDParam(self._cam_handle, control, value))
+        value = lib.GetQHYCCDParam(self._cam_handle, CONTROL_CODE_DICT[control])
+        
+        return float(value)
+
+    ################################ USB speed ################################
+
+    def set_usbtraffic(self, usbtraffic):
+        """Set the USB speed (USBTRAFFIC) parameter of the current camera
+        
+        Set the USB speed (USBTRAFFIC) parameter of the current QHYCCD camera.
+        Raises KeyError in case of error.
+
+        Parameters
+        ----------
+        usbtraffic: integer
+            USB speed factor between 0 (fastest) and 100 (slowest)
+
+        Sets attributes
+        ---------------
+        _usbtraffic : integer
+            USB speed factor between 0 (fastest) and 100 (slowest)
+        """
+        if self.has_control('CONTROL_USBTRAFFIC'):
+            self.set_control('CONTROL_USBTRAFFIC', usbtraffic)
+        else:
+            print("Error: USB traffic parameter not supported")
+            raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
+
+        self._usbtraffic = int(usbtraffic)
+
         return self
 
+    def get_usbtraffic(self):
+        """Return the USB speed (USBTRAFFIC) parameter of the current camera
+        
+        Return the USB speed (USBTRAFFIC) parameter of the current camera.
+
+        Returns
+        -------
+        usbtraffic: integer
+            USB speed factor between 0 (fastest) and 100 (slowest)
+        """
+        if not hasattr(self, '_usbtraffic'):
+            if self.has_control('CONTROL_USBTRAFFIC'):
+                self._usbtraffic = int(self.query_control('CONTROL_USBTRAFFIC'))
+            else:
+                print("Error: USB traffic parameter not supported")
+                raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
+
+        return self._usbtraffic
+
+    ################################## Gain ###################################
+
+    def set_gain(self, gain):
+        """Set the detector gain of the current camera
+        
+        Set the detector gain of the current QHYCCD camera.
+        Raises KeyError in case of error.
+
+        Parameters
+        ----------
+        gain: float
+            detector gain (in cB)
+
+        Sets attributes
+        ---------------
+        _gain : float
+            detector gain (in cB)
+        """
+        if self.has_control('CONTROL_GAIN'):
+            self.set_control('CONTROL_GAIN', gain)
+        else:
+            print("Error: gain parameter not supported")
+            raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
+
+        self._gain = gain
+
+        return self
+
+    def get_gain(self):
+        """Return the detector gain of the current camera
+        
+        Return the detector gain of the current QHYCCD camera.
+
+        Returns
+        -------
+        gain: float
+            detector gain (in cB)
+        """
+        if not hasattr(self, '_gain'):
+            if self.has_control('CONTROL_GAIN'):
+                self._gain = int(self.query_control('CONTROL_GAIN'))
+            else:
+                print("Error: gain not supported")
+                raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
+
+        return self._gain
+
+    ################################# Offset ##################################
+
+    def set_offset(self, offset):
+        """Set the detector offset of the current camera
+        
+        Set the detector offset of the current QHYCCD camera.
+        Raises KeyError in case of error.
+
+        Parameters
+        ----------
+        offset: integer
+            detector offset
+
+        Sets attributes
+        ---------------
+        _offset : integer
+            detector offset
+        """
+        if self.has_control('CONTROL_OFFSET'):
+            self.set_control('CONTROL_OFFSET', offset)
+        else:
+            print("Error: offset parameter not supported")
+            raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
+
+        self._offset = offset
+
+        return self
+
+    def get_offset(self):
+        """Return the detector offset parameter of the current camera
+        
+        Return the detector offset of the current QHYCCD camera.
+
+        Returns
+        -------
+        offset: float
+            detector offset
+        """
+        if not hasattr(self, '_offset'):
+            if self.has_control('CONTROL_OFFSET'):
+                self._offset = int(self.query_control('CONTROL_OFFSET'))
+            else:
+                print("Error: offset not supported")
+                raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
+
+        return self._offset
+
+    ############################## Exposure time ##############################
+
+    def set_exptime(self, exptime):
+        """Set the exposure time of the current camera
+        
+        Set the exposure time of the current QHYCCD camera.
+        Raises KeyError in case of error.
+
+        Parameters
+        ----------
+        exptime: float
+            exposure time (in seconds)
+
+        Sets attributes
+        ---------------
+        _exptime : float
+            exposure time (in seconds)
+        """
+        if self.has_control('CONTROL_EXPOSURE'):
+            self.set_control('CONTROL_EXPOSURE', int(exptime * 1.0e6))
+        else:
+            print("Error: exposure time parameter not supported")
+            raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
+
+        self._exptime = int(exptime * 1.0e6) * 1.0e-6
+
+        return self
+
+    def get_exptime(self):
+        """Return the exposure time of the current camera
+        
+        Return the exposure time of the current QHYCCD camera.
+
+        Returns
+        -------
+        exptime: float
+            exposure time (in seconds)
+        """
+        if not hasattr(self, '_exptime'):
+            if self.has_control('CONTROL_EXPOSURE'):
+                self._exptime = float(self.query_control('CONTROL_EXPOSURE')) * 1.0e-6
+            else:
+                print("Error: exposure time not supported")
+                raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
+
+        return self._exptime
+
+    ################################ Bitdepth #################################
+
+    def set_bitdepth(self, bitdepth):
+        """Set the bit depth
+        
+        Set the camera bit depth.
+        Raises RuntimeError in case of error.
+        
+        Parameters
+        ----------
+        bitdepth : int
+            Bit depth in bits
+
+        Sets attributes
+        ---------------
+        _bitdepth : int
+            Bit depth in bits
+        """
+        check_status(lib.SetQHYCCDBitsMode(self._cam_handle, int(bitdepth)))
+
+        self._bitdepth = bitdepth
+
+        return self
+
+    def get_bitdepth(self):
+        """Get the bit depth
+        
+        Get the camera bit depth.
+        
+        Returns
+        ---------------
+        bitdepth: int
+            Bit depth in bits
+        """
+        if not hasattr(self, '_bitdepth'):
+            print("Error: camera bit depth not set")
+            raise RuntimeError(error('QHYCCD_ERROR'))
+
+        return self._bitdepth
+
+    ############################### Streaming #################################
 
     def set_stream_mode(self, mode='single'):
         """Set the camera read out mode
@@ -334,18 +650,136 @@ class qhyccd(object):
         self._stream_mode = mode
         return self
 
+    def get_stream_mode(self):
+        """Return the camera stream mode
+        
+        Return the camera stream mode.
+        Raises RunTimeError if stream mode is not set.
+        
+        Returns
+        -------
+        mode : string
+            'single': single exposure (default)
+            'live': video mode
+        """
+        if not hasattr(self, '_stream_mode'):
+            print("Error: camera stream mode not set")
+            raise RuntimeError(error('QHYCCD_ERROR'))
+
+        return  self._stream_mode
+
+    ############################ Detector geometry ############################
+
+    def set_region(self, start, size):
+        """Set the camera acquisition region
+        
+        Set the camera acquisition region
+        Raises RunTimeError in case of error.
+        
+        Parameters
+        ----------
+        start : int[2]
+            [startX, startY]
+        size : int[2]
+            [sizeX, sizeY]
+
+        Sets attributes
+        ---------------
+        _region_start : int[2]
+            [startX, startY]
+        _region_size : int[2]
+            [sizeX, sizeY]
+        """
+        if size[0]*size[1] == 0:
+            size = self.get_image_size()
+
+        check_status(lib.SetQHYCCDResolution(self._cam_handle, \
+                     start[0], start[1], size[0], size[1]))
+
+        self._region_start = start.copy()
+        self._region_size = size.copy()
+        self.image = np.zeros([self._region_size[1], self._region_size[0]], dtype=np.uint16)
+
+        return self
+
+    def get_region(self):
+        """Get the camera acquisition region
+        
+        Get the camera acquisition region
+        Raises KeyError or RunTimeError in case of error.
+        
+        Sets attributes
+        ---------------
+        _region_start : int[2]
+            [startX, startY]
+        _region_size : int[2]
+            [sizeX, sizeY]
+
+        Returns
+        ---------------
+        region_start : int[2]
+            [startX, startY]
+        region_size : int[2]
+            [sizeX, sizeY]
+
+        """
+        if not hasattr(self, '_region_size'):
+            self._region_start = [0, 0]
+            self._region_size = self.get_image_size().copy()
+
+        return self._region_start, self._region_size
+
+    def set_binsize(self, binsize):
+        """Set the pixel binsize
+        
+        Set the camera pixel binsize.
+        Raises RuntimeError in case of error.
+        
+        Parameters
+        ----------
+        binsize : int[2]
+            [sizeX, sizeY]
+
+        Sets attributes
+        ---------------
+        _binsize : int[2]
+            [sizeX, sizeY]
+        """
+        check_status(lib.SetQHYCCDBinMode(self._cam_handle, \
+                     binsize[0], binsize[1]))
+
+        self._binsize = binsize.copy()
+
+        return self
+
+    def get_binsize(self):
+        """Get the pixel binsize
+        
+        Get the camera pixel binsize.
+        
+        Returns
+        ---------------
+        binsize : int[2]
+            [sizeX, sizeY]
+        """
+        if not hasattr(self, '_binsize'):
+            self._binsize = [1, 1]
+
+        return self._binsize.copy()
+
     def query_chip_info(self):
         """Query information from the current camera
         
         Query information from the current camera.
         Raises RunTimeError in case of error.
+
         Sets attributes
         ---------------
-        _chip_size : tuple double[2]
+        _chip_size : float[2]
             physical chip size (W,H in mm), 
-        _image_size : tuple uint32[2]
+        _image_size : uint32[2]
             maximum raster size (W,H in pixels),
-        _pixel_size : tuple double[2]
+        _pixel_size : float[2]
             physical pixel size (W,H in um),
         _bpp : uint8
             bit depth
@@ -361,9 +795,9 @@ class qhyccd(object):
                      pixel_size, pixel_size + 1, \
                      bpp))
 
-        self._chip_size = tuple(chip_size)
-        self._image_size = tuple(image_size)
-        self._pixel_size = tuple(pixel_size)
+        self._chip_size = list(chip_size)
+        self._image_size = list(image_size)
+        self._pixel_size = list(pixel_size)
         self._bpp = int(bpp[0])
         return self
 
@@ -371,104 +805,113 @@ class qhyccd(object):
         """Return the physical chip size of the current camera
         
         Return the physical chip size of the current QHYCCD camera.
+
         Returns
         -------
-        chip_size : tuple double[2]
+        chip_size : float[2]
             physical chip size (W,H in mm), 
         """
         if not hasattr(self, '_chip_size'):
             self.query_chip_info()
-        return self._chip_size
+        return self._chip_size.copy()
 
     def get_image_size(self):
-        """Return the mximum image size of the current camera
+        """Return the maximum image size of the current camera
         
-        Return the mximum image (raster) size of the current QHYCCD camera.
+        Return the maximum image (raster) size of the current QHYCCD camera.
+
         Returns
         -------
-        image_size : tuple uint32[2]
+        image_size : uint32[2]
             maximum raster size (W, H in pixels)
         """
-        if not hasattr(self, '_pixel_size'):
+        if not hasattr(self, '_image_size'):
             self.query_chip_info()
-        return self._image_size
+        return self._image_size.copy()
 
     def get_pixel_size(self):
         """Return the physical pixel size of the current camera
         
         Return the physical pixel size of the current QHYCCD camera.
+
         Returns
         -------
-        pixel_size : tuple double[2]
+        pixel_size :float[2]
             physical pixel size (W,H in um), 
         """
         if not hasattr(self, '_pixel_size'):
             self.query_chip_info()
-        return self._pixel_size
+        return self._pixel_size.copy()
 
     def query_overscan_area(self):
         """Query the overscan limits from the current camera
         
         Query the overscan limits from the current QHYCCD camera.
         Raises RunTimeError in case of error
+
         Sets attributes
         ---------------
-        _overscan_limits : tuple of 4 integers
+        _overscan_limits : int[4]
             [startX, startY, sizeX, sizeY]
         """
         limits = ffi.new('uint32_t[4]')
         check_status(lib.GetQHYCCDOverScanArea(self._cam_handle, \
                      limits, limits + 1, limits + 2, limits + 3))
-        self._overscan_limits = tuple(limits)
+        self._overscan_limits = list(limits)
         return self
 
     def get_overscan_area(self):
         """Return the overscan limits of the current camera
         
         Return the overscan limits from the current QHYCCD camera.
+
         Returns
         -------
-        overscan_limits : tuple of 4 integers
+        overscan_limits : int[4]
             [startX, startY, sizeX, sizeY]
         """
         if not hasattr(self, '_overscan_limits'):
             self.query_oversan_area()
-        return self._overscan_limits
+        return self._overscan_limits.copy()
 
     def query_effective_area(self):
         """Query the effective limits from the current camera
         
         Query the effective limits from the current QHYCCD camera.
         Raises RunTimeError in case of error.
+
         Sets attributes
         ---------------
-        _effective_limits : tuple of 4 integers
+        _effective_limits : int[4]
             [startX, startY, sizeX, sizeY]
         """
         limits = ffi.new('uint32_t[4]')
         check_status(lib.GetQHYCCDOverScanArea(self._cam_handle, \
                      limits, limits + 1, limits + 2, limits + 3))
-        self._effective_limits = tuple(limits)
+        self._effective_limits = list(limits)
         return self
 
     def get_effective_area(self):
         """Return the effective limits of the current camera
         
         Return the effective limits from the current QHYCCD camera.
+
         Returns
         -------
-        effective_limits : tuple of 4 integers
+        effective_limits : int[4]
             [startX, startY, sizeX, sizeY]
         """
         if not hasattr(self, '_effective_limits'):
             self.query_effective_area()
-        return self._effective_limits
+        return self._effective_limits.copy()
 
+    ############################ Software versions ############################
     def query_sdk_version(self):
         """Query the version of the QHYCCD driver
         
         Query the version of the QHYCCD driver.
         Raises RunTimeError in case of error.
+
         Sets attributes
         ---------------
         _sdk_version : string
@@ -483,6 +926,7 @@ class qhyccd(object):
         """Return the version of the QHYCCD driver
         
         Return the version of the QHYCCD driver.
+
         Returns
         -------
         version : string
@@ -497,6 +941,7 @@ class qhyccd(object):
  
         Query the version of the firmware from the current QHYCCD camera.
         Raises RunTimeError in case of error.
+
         Sets attributes
         ---------------
         _firmware_version : string
@@ -517,6 +962,7 @@ class qhyccd(object):
         """Return the version of the firmware from the camera
         
         Return the version of the firmware from the current QHYCCD camera.
+
         Returns
         -------
         version : string
@@ -527,8 +973,7 @@ class qhyccd(object):
         return self._firmware_version
         
     def __del__(self):
-        if hasattr(self, '_cam_handle'):
-            self.close_camera()
+        self.close_camera()
         self.release_resource()
 
 if __name__=='__main__':
