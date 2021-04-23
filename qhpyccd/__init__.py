@@ -693,11 +693,17 @@ class qhyccd(object):
         if size[0]*size[1] == 0:
             size = self.get_image_size()
 
+        # Need this if region updated
+        if hasattr(self, '_region_set'):
+            check_status(lib.CancelQHYCCDExposingAndReadout(self._cam_handle))
+
         check_status(lib.SetQHYCCDResolution(self._cam_handle, \
                      start[0], start[1], size[0], size[1]))
 
         self._region_start = start.copy()
         self._region_size = size.copy()
+        self._region_set = True
+        
         self.image = np.zeros([self._region_size[1], self._region_size[0]], dtype=np.uint16)
 
         return self
@@ -973,6 +979,8 @@ class qhyccd(object):
         return self._firmware_version
         
     def __del__(self):
+        if hasattr(self, '_region_set'):
+            check_status(lib.CancelQHYCCDExposingAndReadout(self._cam_handle))
         self.close_camera()
         self.release_resource()
 

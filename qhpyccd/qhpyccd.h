@@ -248,3 +248,13 @@ extern uint32_t GetQHYCCDSingleFrame(qhyccd_handle *handle,uint32_t *w,uint32_t 
    another QHYCCD_ERROR code on other failures
  */
 
+extern uint32_t CancelQHYCCDExposingAndReadout(qhyccd_handle *handle);
+/**
+  @fn uint32_t CancelQHYCCDExposingAndReadout(qhyccd_handle *handle)
+  @brief force stop the camera long exposure. And also camera does not send back the image data. Host software must not readout the data. All camera support this mode. 
+  @param handle camera control handle
+  @return
+  on success,return QHYCCD_SUCCESS \n
+  another QHYCCD_ERROR code on other failures
+  */
+
