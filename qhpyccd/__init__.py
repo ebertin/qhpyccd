@@ -911,6 +911,39 @@ class qhyccd(object):
             self.query_effective_area()
         return self._effective_limits.copy()
 
+    ########################## Cooling and temperature ########################
+    def get_temperature(self):
+        """Return the temperature of the sensor
+        
+        Return the detector temperature of the current QHYCCD camera.
+
+        Returns
+        -------
+        temp: float
+            detector temperature (in °C)
+        """
+        if self.has_control('CONTROL_CURTEMP'):
+            return int(self.query_control('CONTROL_CURTEMP'))
+        else:
+            print("Error: curtemp not supported")
+            raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
+
+
+    def set_temperature(self, temp, wait=False):
+        """Set the target temperature of the sensor
+        
+        Parameters
+        ----------
+        temp: float
+              target temperature (in °C)
+        """
+        if self.has_control('CONTROL_COOLER'):
+            self.set_control('CONTROL_COOLER', temp)
+        else:
+            print("Error: cooling not supported")
+            raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
+
+
     ############################ Software versions ############################
     def query_sdk_version(self):
         """Query the version of the QHYCCD driver

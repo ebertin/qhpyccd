@@ -10,5 +10,5 @@ print("Acquisition end!")
 print(f"Image mean:   {np.mean(cam.image):.2f}")
 print(f"Image stddev: {np.std(cam.image):.2f}")
 hdu = fits.PrimaryHDU(cam.image)
-hdu.writeto('qhyccd.fits', overwrite=True)
+hdu.writeto('qhyccd1.fits', overwrite=True)
 
