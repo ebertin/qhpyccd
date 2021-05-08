@@ -971,7 +971,24 @@ class qhyccd(object):
             print("Error: cooling not supported")
             raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
 
+    ############################## Readout modes ##############################
 
+    def get_number_of_read_modes(self):
+        number = ffi.new('uint32_t *')
+        check_status(
+            lib.GetQHYCCDNumberOfReadModes(self._cam_handle, number))
+        return number[0]
+
+    def get_read_mode(self):
+        mode_number = ffi.new('uint32_t *')
+        check_status(
+            lib.GetQHYCCDReadMode(self._cam_handle, mode_number))
+        return mode_number[0]
+
+    def set_read_mode(self, mode_number):
+        check_status(
+            lib.SetQHYCCDReadMode(self._cam_handle, mode_number))
+        
     ############################ Software versions ############################
     def query_sdk_version(self):
         """Query the version of the QHYCCD driver
