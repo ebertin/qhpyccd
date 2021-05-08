@@ -923,14 +923,28 @@ class qhyccd(object):
             detector temperature (in °C)
         """
         if self.has_control('CONTROL_CURTEMP'):
-            return int(self.query_control('CONTROL_CURTEMP'))
+            return float(self.query_control('CONTROL_CURTEMP'))
         else:
             print("Error: curtemp not supported")
             raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
 
+    def get_target_temperature(self):
+        """Return the target temperature of the cooling system
+        
+        Parameters
+        ----------
+        temp: float
+              target temperature (in °C)
+        """
+        if self.has_control('CONTROL_COOLER'):
+            return float(self.query_control('CONTROL_COOLER'))
+        else:
+            print("Error: cooling not supported")
+            raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
 
-    def set_temperature(self, temp, wait=False):
-        """Set the target temperature of the sensor
+
+    def set_target_temperature(self, temp, wait=False):
+        """Set the target temperature of the cooling system
         
         Parameters
         ----------
