@@ -931,13 +931,27 @@ class qhyccd(object):
     def get_target_temperature(self):
         """Return the target temperature of the cooling system
         
-        Parameters
-        ----------
+        Returns
+        -------
         temp: float
               target temperature (in °C)
         """
         if self.has_control('CONTROL_COOLER'):
             return float(self.query_control('CONTROL_COOLER'))
+        else:
+            print("Error: cooling not supported")
+            raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
+
+    def get_cooling_power(self):
+        """Return the pwm value of the cooling system
+        
+        Returns
+        -------
+        pwm: int
+              cooling power (0-255)
+        """
+        if self.has_control('CONTROL_CURPWM'):
+            return int(self.query_control('CONTROL_CURPWM'))
         else:
             print("Error: cooling not supported")
             raise KeyError(error('QHYCCD_ERROR_UNSUPPORTED'))
