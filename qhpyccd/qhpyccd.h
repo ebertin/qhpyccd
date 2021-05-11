@@ -258,6 +258,10 @@ extern uint32_t CancelQHYCCDExposingAndReadout(qhyccd_handle *handle);
   another QHYCCD_ERROR code on other failures
   */
 
+extern uint32_t BeginQHYCCDLive(qhyccd_handle *handle);
+extern uint32_t  GetQHYCCDLiveFrame(qhyccd_handle *handle,uint32_t *w,uint32_t *h,uint32_t *bpp,uint32_t *channels,uint8_t *imgdata);
+extern uint32_t StopQHYCCDLive(qhyccd_handle *handle);
+
 extern uint32_t  GetQHYCCDNumberOfReadModes(qhyccd_handle *h,uint32_t *numModes);
 // Get the maximum resolution for a read mode
 extern uint32_t  GetQHYCCDReadModeResolution(qhyccd_handle *h,uint32_t modeNumber, uint32_t* width, uint32_t* height);

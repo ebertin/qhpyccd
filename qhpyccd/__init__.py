@@ -668,6 +668,38 @@ class qhyccd(object):
 
         return  self._stream_mode
 
+    def begin_live(self):
+        if not hasattr(self, '_cam_handle'):
+            print("Error: camera is not open")
+            raise RuntimeError(error('QHYCCD_ERROR'))
+
+        if not hasattr(self, 'image'):
+            print("Error: Acquisition region has not been set")
+            raise RuntimeError(error('QHYCCD_ERROR'))
+
+        self.roi_size = ffi.new('uint32_t[2]')
+        self.bpp = ffi.new('uint32_t *')
+        self.channels = ffi.new('uint32_t *')
+        self.imageData = ffi.cast("uint8_t *", self.image.ctypes.data)
+
+        check_status(lib.BeginQHYCCDLive(self._cam_handle))
+        
+    def stop_live(self):
+        check_status(lib.StopQHYCCDLive(self._cam_handle))
+
+    def get_live_frame(self):
+        """Acquire an image with the current QHYCCD camera
+        
+        Acquire an image with the current QHYCCD camera.
+        Raises RunTimeError in case of error or if the camera is not open.
+        """
+        check_status(lib.GetQHYCCDLiveFrame(self._cam_handle,
+                                            self.roi_size, self.roi_size + 1,
+                                            self.bpp, \
+                                            self.channels, \
+                                            self.imageData))
+
+        
     ############################ Detector geometry ############################
 
     def set_region(self, start, size):
