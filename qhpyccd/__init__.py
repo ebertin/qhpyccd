@@ -1006,18 +1006,36 @@ class qhyccd(object):
     ############################## Readout modes ##############################
 
     def get_number_of_read_modes(self):
+        """Get the number of available readout modes
+        
+        Returns
+        ------
+        number: The number of available readout modes
+        """
         number = ffi.new('uint32_t *')
         check_status(
             lib.GetQHYCCDNumberOfReadModes(self._cam_handle, number))
         return number[0]
 
     def get_read_mode(self):
+        """Get the selected readout mode
+        
+        Returns
+        ------
+        mode_number: The selected readout mode
+        """
         mode_number = ffi.new('uint32_t *')
         check_status(
             lib.GetQHYCCDReadMode(self._cam_handle, mode_number))
         return mode_number[0]
 
     def set_read_mode(self, mode_number):
+        """Select the readout mode
+        
+        Parameters
+        ----------
+        mode_number: The number corresponding to the desired readout mode
+        """
         check_status(
             lib.SetQHYCCDReadMode(self._cam_handle, mode_number))
         
