@@ -1,10 +1,6 @@
-<<<<<<< HEAD
-from setuptools import setup
-#from distutils.core import setup
-=======
 #from distutils.core import setup
 from setuptools import setup
->>>>>>> f76651e (for some reason distutils is not working on this machine, switch to setup_tools)
+
 
 setup(name='qhpyccd',
       version="0.1",
